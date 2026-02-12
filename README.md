@@ -1,36 +1,212 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🔖 Smart Bookmarks
 
-## Getting Started
+A real-time bookmark manager where users sign in with Google, save private bookmarks, and see changes sync instantly across tabs — no page refresh needed.
 
-First, run the development server:
+![Next.js](https://img.shields.io/badge/Next.js_15-black?style=for-the-badge&logo=next.js&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS_v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![Vercel](https://img.shields.io/badge/Deployed_on-Vercel-black?style=for-the-badge&logo=vercel&logoColor=white)
+
+> **Live Demo:** [https://your-app.vercel.app](https://your-app.vercel.app)
+
+---
+
+## ✨ Features
+
+| Feature                   | Description                                                              |
+| ------------------------- | ------------------------------------------------------------------------ |
+| 🔐 **Google OAuth**       | Sign in with Google — no email/password needed                           |
+| ➕ **Add Bookmarks**      | Save any URL with a custom title                                         |
+| 🔒 **Private Data**       | Each user only sees their own bookmarks (enforced by Row Level Security) |
+| ⚡ **Real-time Sync**     | Open two tabs — add a bookmark in one, it appears in the other instantly |
+| 🗑️ **Delete Bookmarks**   | Remove bookmarks with optimistic UI updates                              |
+| 🌐 **Deployed on Vercel** | Live and accessible with a working URL                                   |
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer              | Technology                                                            |
+| ------------------ | --------------------------------------------------------------------- |
+| **Framework**      | [Next.js 15](https://nextjs.org/) (App Router)                        |
+| **Authentication** | [Supabase Auth](https://supabase.com/auth) (Google OAuth via PKCE)    |
+| **Database**       | [Supabase](https://supabase.com/) (PostgreSQL)                        |
+| **Real-time**      | [Supabase Realtime](https://supabase.com/realtime) (Postgres Changes) |
+| **Styling**        | [Tailwind CSS v4](https://tailwindcss.com/)                           |
+| **Language**       | TypeScript                                                            |
+| **Deployment**     | [Vercel](https://vercel.com/)                                         |
+
+---
+
+## 📁 Project Structure
+
+```
+smart-bookmarks/
+├── app/
+│ ├── layout.tsx
+│ ├── page.tsx
+│ ├── globals.css
+│ ├── auth/
+│ │ └── callback/
+│ │ └── route.ts
+│ └── dashboard/
+│ └── page.tsx
+├── components/
+│ ├── AuthButton.tsx
+│ ├── DashboardClient.tsx
+│ └── Navbar.tsx
+├── lib/
+│ └── supabase/
+│ ├── client.ts
+│ ├── server.ts
+│ └── middleware.ts
+├── types/
+│ └── index.ts
+├── proxy.ts
+└── README.md
+```
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- **Node.js** 18+
+- **Supabase** account ([free tier](https://supabase.com))
+- **Google Cloud** OAuth credentials ([console](https://console.cloud.google.com/apis/credentials))
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/yourusername/smart-bookmarks.git
+cd smart-bookmarks
+npm install
+```
+
+### 2. Set up Supabase
+
+#### 1. Create a new project at supabase.com
+
+#### 2. Go to SQL Editor and run the contents of supabase-schema.sql:
+
+```bash Creates the bookmarks table, RLS policies, and enables Realtime
+CREATE TABLE IF NOT EXISTS public.bookmarks (
+id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+url TEXT NOT NULL,
+title TEXT NOT NULL,
+created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+ALTER TABLE public.bookmarks ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own bookmarks"
+ON public.bookmarks FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own bookmarks"
+ON public.bookmarks FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own bookmarks"
+ON public.bookmarks FOR DELETE USING (auth.uid() = user_id);
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.bookmarks;
+ALTER TABLE public.bookmarks REPLICA IDENTITY FULL;
+
+CREATE INDEX IF NOT EXISTS idx_bookmarks_user_id ON public.bookmarks(user_id);
+```
+
+#### 3. Enable Google Auth in Supabase:
+
+- Go to Authentication → Providers → Google
+  Toggle it ON
+- Paste your Google Client ID and Client Secret
+
+#### 4. Configure URL settings in Supabase:
+
+- Site URL: http://localhost:3000 (change to your Vercel URL after deployment)
+- Redirect URLs: Add both:
+
+```bash
+http://localhost:3000/auth/callback
+https://your-app.vercel.app/auth/callback
+```
+
+### 3. Set up Google OAuth
+
+#### 1. Go to Google Cloud Console → Credentials
+
+#### 2. Create an OAuth 2.0 Client ID (Web application)
+
+#### 3. Set Authorized redirect URI to:
+
+```bash
+https://YOUR-PROJECT-REF.supabase.co/auth/v1/callback
+```
+
+#### 4. Set Authorized JavaScript origins to:
+
+```bash
+http://localhost:3000
+https://your-app.vercel.app
+```
+
+### 4. Configure environment variables
+
+#### Create a .env file:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+```
+
+### 5. Run locally
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 6. Deploy to Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Push your code to GitHub
+- Import the repo at vercel.com/new
+- Add environment variables:
+- NEXT_PUBLIC_SUPABASE_URL
+- NEXT_PUBLIC_SUPABASE_ANON_KEY
+- Deploy
+- After deployment, update the Site URL in Supabase to your Vercel domain.
 
-## Learn More
+## 🏗️ Architecture
 
-To learn more about Next.js, take a look at the following resources:
+```
+┌──────────────┐     Google OAuth      ┌──────────────────┐
+│              │ ───────────────────▸  │                  │
+│   Browser    │                       │     Supabase     │
+│  (Next.js)   │ ◂─── JWT cookie ───  │   Auth + DB +    │
+│              │                       │    Realtime      │
+│              │ ── CRUD via RLS ──▸  │                  │
+│              │ ◂── Realtime WS ───  │                  │
+└──────────────┘                       └──────────────────┘
+       │
+       │ SSR + Middleware
+       ▼
+┌──────────────┐
+│    Vercel    │
+│   (Hosting)  │
+└──────────────┘
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Key design decisions:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- <b>Server-side initial fetch:</b> Dashboard loads bookmarks on the server for fast first paint, then the client takes over with Realtime subscriptions
+- <b>Optimistic U: </b> Deletes remove the bookmark instantly; inserts appear as soon as the database confirms
+- <b>Row Level Security: </b> All data access is enforced at the database level, not just the UI
+- <b>Middleware auth guard: </b> /dashboard is protected via Next.js middleware that validates the Supabase session
+- <b>Cookie-based auth: </b> No client-side auth state management, avoiding hydration mismatches
 
-## Deploy on Vercel
+## 📄 License
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### This project is open source and available under the <a>MIT License</a>.
