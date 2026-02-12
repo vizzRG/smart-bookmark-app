@@ -179,6 +179,8 @@ Open http://localhost:3000
 - Deploy
 - After deployment, update the Site URL in Supabase to your Vercel domain.
 
+---
+
 ## 🏗️ Architecture
 
 ```
@@ -206,6 +208,62 @@ Open http://localhost:3000
 - <b>Row Level Security: </b> All data access is enforced at the database level, not just the UI
 - <b>Middleware auth guard: </b> /dashboard is protected via Next.js middleware that validates the Supabase session
 - <b>Cookie-based auth: </b> No client-side auth state management, avoiding hydration mismatches
+
+---
+
+## 🐛 Problems I Ran Into & How I Solved Them
+
+### 1. ERR_SSL_PROTOCOL_ERROR after Google login on localhost
+
+<b><span style="color:red">Problem:</span></b> Running npm run build && npm run start sets NODE_ENV=production. The original callback route forced https:// for production, which broke http://localhost:3000.
+
+<b><span style="color:lightgreen">Solution:</span></b> Simplified the callback route to always use the origin from the request URL, which preserves http:// on localhost and https:// on Vercel automatically.
+
+### 2. Hydration mismatch on date formatting
+
+<b><span style="color:red">Problem:</span></b> new Date().toLocaleDateString() produced different output on the server (13/2/2026) vs. the client (2/13/2026) because of locale differences.
+
+<b><span style="color:lightgreen">Solution:</span></b> Replaced toLocaleDateString() with a custom formatDate() function using getUTCFullYear/Month/Date that produces identical output on both server and client. Also added a getRelativeTime() function for better UX.
+
+### 3. Bookmarks not updating without page refresh
+
+<b><span style="color:red">Problem:</span></b> Initially used separate components for the form and list. The form would insert into the database, but the list component wouldn't know about it until a Realtime event arrived (which required proper Supabase Realtime configuration).
+
+<b><span style="color:lightgreen">Solution:</span></b> Combined the form and list into a single DashboardClient component so they share state. The insert handler uses .select().single() to get the created bookmark back immediately and adds it to local state. Realtime is still active for cross-tab sync.
+
+### 4. Supabase Realtime DELETE events returning empty old records
+
+<b><span style="color:red">Problem:</span></b> By default, Supabase Realtime only sends the primary key in payload.old for DELETE events, but sometimes even that was empty.
+
+<b><span style="color:lightgreen">Solution:</span></b> Set REPLICA IDENTITY FULL on the bookmarks table so the full row data is included in DELETE events:
+
+```
+ALTER TABLE public.bookmarks REPLICA IDENTITY FULL;
+```
+
+### 5. Supabase cookie handling in Next.js App Router
+
+<b><span style="color:red">Problem:</span></b> Server Components, Route Handlers, and Middleware each have different APIs for reading/writing cookies in Next.js 15.
+
+<b><span style="color:lightgreen">Solution:</span></b> Created three separate Supabase client factories following the official @supabase/ssr docs:
+
+- lib/supabase/client.ts — for client components (browser)
+- lib/supabase/server.ts — for server components and route handlers
+- lib/supabase/middleware.ts — for Next.js middleware (session refresh)
+
+### 6. OAuth redirect URL mismatch on Vercel
+
+<b><span style="color:red">Problem:</span></b> Google OAuth returned an error because the redirect URL didn't match across Google Console, Supabase, and the app.
+
+<b><span style="color:lightgreen">Solution:</span></b> Ensured all three places use the same Supabase callback URL:
+
+```
+https://YOUR-PROJECT-REF.supabase.co/auth/v1/callback
+```
+
+And added both localhost and production app URLs to Supabase's Redirect URL allowlist.
+
+---
 
 ## 📄 License
 
