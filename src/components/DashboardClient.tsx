@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import type { Bookmark } from "@/types";
 
 function formatDate(dateString: string): string {
@@ -36,6 +36,11 @@ function getRelativeTime(dateString: string): string {
   return formatDate(dateString);
 }
 
+// Simple cross-tab notification via localStorage
+function notifyOtherTabs() {
+  localStorage.setItem("bookmarks-changed", Date.now().toString());
+}
+
 export default function DashboardClient({
   userId,
   initialBookmarks,
@@ -43,7 +48,8 @@ export default function DashboardClient({
   userId: string;
   initialBookmarks: Bookmark[];
 }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(initialBookmarks);
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
@@ -53,42 +59,46 @@ export default function DashboardClient({
   const [successMessage, setSuccessMessage] = useState("");
   const titleInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Real-time subscription for cross-tab sync ──
-  useEffect(() => {
-    const channel = supabase
-      .channel(`bookmarks-${userId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "bookmarks",
-        },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            const newBookmark = payload.new as Bookmark;
-            if (newBookmark.user_id === userId) {
-              setBookmarks((prev) => {
-                if (prev.some((b) => b.id === newBookmark.id)) return prev;
-                return [newBookmark, ...prev];
-              });
-            }
-          }
+  // ── Fetch bookmarks from database ──
+  const fetchBookmarks = useCallback(async () => {
+    const { data } = await supabase
+      .from("bookmarks")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
 
-          if (payload.eventType === "DELETE") {
-            const oldRecord = payload.old as { id?: string };
-            if (oldRecord.id) {
-              setBookmarks((prev) => prev.filter((b) => b.id !== oldRecord.id));
-            }
-          }
-        },
-      )
-      .subscribe();
+    if (data) {
+      setBookmarks(data as Bookmark[]);
+    }
+  }, [supabase, userId]);
+
+  // ── Listen for changes from other tabs via localStorage ──
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "bookmarks-changed") {
+        fetchBookmarks();
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
 
     return () => {
-      supabase.removeChannel(channel);
+      window.removeEventListener("storage", handleStorageChange);
     };
-  }, [supabase, userId]);
+  }, [fetchBookmarks]);
+
+  // ── Re-fetch on tab focus ──
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchBookmarks();
+    };
+
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [fetchBookmarks]);
 
   // ── Add bookmark ──
   const handleAdd = async (e: React.FormEvent) => {
@@ -133,6 +143,9 @@ export default function DashboardClient({
         if (prev.some((b) => b.id === data.id)) return prev;
         return [data as Bookmark, ...prev];
       });
+
+      // Tell other tabs to re-fetch
+      notifyOtherTabs();
     }
 
     setUrl("");
@@ -151,12 +164,10 @@ export default function DashboardClient({
 
     if (error) {
       console.error("Delete failed:", error.message);
-      const { data } = await supabase
-        .from("bookmarks")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false });
-      if (data) setBookmarks(data as Bookmark[]);
+      fetchBookmarks();
+    } else {
+      // Tell other tabs to re-fetch
+      notifyOtherTabs();
     }
 
     setDeletingId(null);
@@ -166,10 +177,8 @@ export default function DashboardClient({
     <div className="space-y-8">
       {/* ── Header ── */}
       <div className="relative overflow-hidden rounded-2xl border border-gray-800 bg-linear-to-br from-gray-900 via-gray-900 to-gray-800 p-6 sm:p-8">
-        {/* Decorative gradient blobs */}
         <div className="pointer-events-none absolute -right-20 -top-20 h-60 w-60 rounded-full bg-blue-500/10 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-20 -left-20 h-60 w-60 rounded-full bg-purple-500/10 blur-3xl" />
-
         <div className="relative space-y-1">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20 text-blue-400">
@@ -313,7 +322,6 @@ export default function DashboardClient({
               </button>
             </div>
 
-            {/* Messages */}
             {error && (
               <div className="mt-3 flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-2.5">
                 <svg
@@ -384,16 +392,12 @@ export default function DashboardClient({
         </div>
       ) : (
         <div className="space-y-2">
-          {bookmarks.map((bookmark, index) => (
+          {bookmarks.map((bookmark) => (
             <div
               key={bookmark.id}
               className="group relative overflow-hidden rounded-xl border border-gray-800 bg-gray-900/60 backdrop-blur-sm transition-all duration-200 hover:border-gray-700 hover:bg-gray-800/80 hover:shadow-lg hover:shadow-black/20"
-              style={{
-                animationDelay: `${index * 50}ms`,
-              }}
             >
               <div className="flex items-center gap-4 px-4 py-3.5 sm:px-5">
-                {/* Favicon */}
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-800 ring-1 ring-gray-700/50">
                   <img
                     src={getFaviconUrl(bookmark.url)}
@@ -404,8 +408,6 @@ export default function DashboardClient({
                     }}
                   />
                 </div>
-
-                {/* Content */}
                 <div className="min-w-0 flex-1">
                   <a
                     href={bookmark.url}
@@ -435,8 +437,6 @@ export default function DashboardClient({
                     {bookmark.url}
                   </p>
                 </div>
-
-                {/* Right side */}
                 <div className="flex items-center gap-3">
                   <span className="hidden text-xs text-gray-600 sm:inline whitespace-nowrap">
                     {getRelativeTime(bookmark.created_at)}
@@ -464,15 +464,13 @@ export default function DashboardClient({
                   </button>
                 </div>
               </div>
-
-              {/* Subtle left accent line */}
               <div className="absolute left-0 top-0 h-full w-0.5 bg-linear-to-b from-blue-500/0 via-blue-500/0 to-blue-500/0 transition-all duration-300 group-hover:from-blue-500/50 group-hover:via-blue-500/30 group-hover:to-blue-500/0" />
             </div>
           ))}
         </div>
       )}
 
-      {/* ── Footer Stats ── */}
+      {/* ── Footer ── */}
       {bookmarks.length > 0 && (
         <div className="flex items-center justify-center gap-2 pt-2 text-xs text-gray-600">
           <div className="h-1.5 w-1.5 rounded-full bg-emerald-500/60 animate-pulse" />
