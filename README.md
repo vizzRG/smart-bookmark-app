@@ -8,7 +8,7 @@ A real-time bookmark manager where users sign in with Google, save private bookm
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Deployed_on-Vercel-black?style=for-the-badge&logo=vercel&logoColor=white)
 
-> **Live Demo:** [https://your-app.vercel.app](https://your-app.vercel.app)
+> **Live Demo:** [https://smart-bookmark-app-eosin-eight.vercel.app/](https://smart-bookmark-app-eosin-eight.vercel.app/)
 
 ---
 
@@ -263,7 +263,19 @@ https://YOUR-PROJECT-REF.supabase.co/auth/v1/callback
 
 And added both localhost and production app URLs to Supabase's Redirect URL allowlist.
 
----
+### 7. Supabase Realtime postgres_changes INSERT events not syncing across tabs
+
+<b><span style="color:red">Problem:</span></b>Supabase Realtime postgres_changes worked for DELETE events across tabs but INSERT events were not being delivered to other tabs. The INSERT event gets filtered by Supabase's Row Level Security (RLS) evaluation on the receiving client — since the new row was just created, the RLS check sometimes fails or the event gets dropped before reaching other subscribed tabs.
+
+What I tried:
+
+- postgres_changes with event: "\*" — DELETE worked, INSERT didn't
+- postgres_changes with separate INSERT/DELETE listeners — same result
+- Supabase Broadcast (server-side) via channel.send() — didn't reliably deliver
+- localStorage storage events — worked but felt like a workaround
+- Polling with setInterval — worked but not truly real-time
+
+<b><span style="color:lightgreen">Solution:</span></b> Used the browser-native BroadcastChannel API, which is specifically designed for cross-tab communication within the same origin. When Tab A adds or deletes a bookmark, it posts a message to the BroadcastChannel. Tab B listens for these messages and updates its state immediately.
 
 ## 📄 License
 
